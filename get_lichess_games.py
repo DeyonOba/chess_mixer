@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import berserk
 import json
 import argparse
@@ -58,15 +59,16 @@ def download_games():
         games_list = list(games_iterator)
 
         # Create a directory to store the downloaded games if it doesn't exist
-        os.makedirs("./games_data", exist_ok=True)
+        os.makedirs("./data", exist_ok=True)
+        os.makedirs("./data/game_data", exist_ok=True)
 
         for game_info in games_list:
             fullid = game_info.get("fullId")
             filename = f"lichess_{fullid}.pgn"
-            filepath = os.path.join("./games_data", filename)
+            filepath = os.path.join("./data/game_data", filename)
             with open(filepath, "w") as file:
                 file.write(game_info.get("pgn"))
-        print(f"{args.n} games downloded and saved in the './games_data' directory")
+        print(f"{args.n} games downloded and saved in the './data/game_data' directory")
     except berserk.exceptions.BerserkError as e:
         print(f"Error downloading files: {e}", file=sys.stderr)
 
