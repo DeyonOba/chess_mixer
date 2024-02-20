@@ -1,0 +1,7 @@
+# Hidden files
+.env
+.ipynb_checkpoints
+lichess_api_token.json
+test.py
+python*.dll
+stockfish*
