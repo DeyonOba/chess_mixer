@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
-"""Handles file storage and loading"""
+"""Manages download and storage of lichess games based on game id or user API token"""
+
 import os
 import sys
-# from chesspuzzly.constants import ENGINE_PATH, API_TOKEN_PATH
+import requests
+# from chesspuzzler.constants import ENGINE_PATH, API_TOKEN_PATH
 import chess.pgn
 
 
@@ -17,14 +19,15 @@ class FileManger:
     def save_url_game_content(file_object, game_id):
         # Create a directory to store the downloaded games if it doesn't exist
         parent_dir = "./data/game_data"
-        os.makedirs("./data", exist_ok=True)
         os.makedirs(parent_dir, exist_ok=True)
 
         file_name = f'lichess_{game_id}.pgn'
         file_path = os.path.join(parent_dir, file_name)
+
         with open(file_path, mode="w") as file:
             file.writelines(file_object.content.decode())
         
+        # check if the pgn file contains useful information about games
         try:
             with open(file_path) as file:
                 game = chess.pgn.read_game(file)
@@ -64,4 +67,57 @@ class FileManger:
             FileManger.__game_id = game_id
         elif not FileManger.__game_id:
             FileManger.__game_id = input("Enter game id: ")
+        else:
+            FileManger.__game_id = input("Enter game id:")
+
+
+class GameDownloader(FileManger):
+    """Download lichess game
+
+    Attributes:
+        is_token(bool, optional): How the game is to be downloader
+            if true then .json file location should be provided.
+            if false then game id is to be provided.
+    """
+
+    def __init__(self, is_token=False):
+        super().__init__()
+        self.is_token = is_token
+        self.game_id = ""
+
+    def get_lichess_game(self):
+        if self.is_token:
+            # self.token = FileManager.get_token(token_path)
+            # self.get_game_via_api(self.token)
+            pass
+        else:
+            self.set_game_id()
+    
+    def get_game_via_api(self):
+        pass
+
+    def get_game_via_gameid(self, game_id="") -> bool:
+        if game_id:
+            self.game_id = game_id
+            LICHESS_SITE = "https://lichess.org/"
+            TASK = "game/export/"
+            url = LICHESS_SITE + TASK + game_id
+            r = requests.get(url)
+            
+            if r.status_code == 200:
+                self.save_url_game_content(r, self.game_id)
+            else:
+                print("Invalid game id from Lichess....", file=sys.stderr)
+                return False
+            return True
+        else:
+            self.set_game_id()
+        return False
+    
+    def set_game_id(self):
+        self.game_id = input("Enter Game id: ")
+        if self.game_id:
+            self.get_game_via_gameid(self.game_id)
+        else:
+            print("Enter valid game id from Lichess....", file=sys.stderr)
         
