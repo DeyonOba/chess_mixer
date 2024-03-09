@@ -5,68 +5,90 @@
 import os
 import sys
 import requests
+import logging
 # from chesspuzzler.constants import ENGINE_PATH, API_TOKEN_PATH
 import chess.pgn
 
+# Create logging folder if it does not exist
+os.makedirs("./data/logging", exist_ok=True)
+FORMAT = "%(asctime)s:%(funcName)s:%(levelname)s:%(message)s"
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+file_handler = logging.FileHandler("./data/logging/utils.logging")
+formater = logging.Formatter(FORMAT)
+file_handler.setFormatter(formater)
+logger.addHandler(file_handler)
 
 class FileManger:
-    __token_path = "lichess_api_token.json"
     __game_id = ""
 
-    def get_token(self):
-        pass
     @staticmethod
     def save_url_game_content(file_object, game_id):
         # Create a directory to store the downloaded games if it doesn't exist
-        parent_dir = "./data/game_data"
-        os.makedirs(parent_dir, exist_ok=True)
+        parent_dir = os.path.join(".", "data")
+        child_dir = os.path.join(parent_dir, "game_data")
+
+        if not os.path.exists(parent_dir) or not os.path.exists(child_dir):
+            os.makedirs(parent_dir, exist_ok=True)
+            logger.debug("Creating Game data directory...")
+        else:
+            logger.debug("Game Data directory already created...")
 
         file_name = f'lichess_{game_id}.pgn'
-        file_path = os.path.join(parent_dir, file_name)
+        logger.debug(f"File Name: {file_name} to be created...")
+        file_path = os.path.join(child_dir, file_name)
+        logger.debug(f"File to be added to {file_path}...")
 
         with open(file_path, mode="w") as file:
-            file.writelines(file_object.content.decode())
-        
+            logger.debug("File Created...")
+            try:
+                file.writelines(file_object.content.decode())
+                logger.debug(f"Added pgn content from Lichess from game id {game_id} to file...")
+            except:
+                logger.exception(f"Could not add content to {file_path}...")
         # check if the pgn file contains useful information about games
         try:
             with open(file_path) as file:
                 game = chess.pgn.read_game(file)
+                logger.debug("Checking if file is empty or not...")
                 if game is None:
-                    print("File: {file_name} is empty", file=sys.stderr)
+                    logger.debug(f"File {file_name} is empty, delecting file...")
                     os.remove(file_path)
+                    logger.debug(f"{file_name} delected...")
+                    sys.exit(1)
                 else:
-                    print(f"File: {file_name} has been stored in ./data/game_data")
+                    logger.debug(f"File: {file_name} has been stored in {child_dir}")
                 del game
                 FileManger.set_game_id(game_id)
 
         except FileNotFoundError as e:
-            print("Invalid file format: ", e, file=sys.stderr)
+            logger.exception("File not found ...")
 
     @classmethod
     def load_pgn_game(clf, game_id):
         FileManger.set_game_id(game_id)
         file_name = f"lichess_{game_id}.pgn"
-        file_path = os.path.join("data", "game_data", file_name)
+        file_path = os.path.join(".", "data", "game_data", file_name)
+        logger.debug(f"File path for loading data {file_path}...")
         if os.path.exists(file_path):
             with open(file_path) as file:
                 game = chess.pgn.read_game(file)
                 if game is None:
-                    print("File is empty.....", file=sys.stderr)
+                    logger.error("File is empty ...")
                 else:
+                    logger.info(f"GAME LOADING SUCCESSFUL...\n{game}")
                     return game
         else:
-            print("{} is not found.....".format(file_path), file=sys.stderr)
+            logger.error(f"{file_path} is not found...")
 
     @staticmethod
-    def get_token(self):
+    def get_game_via_token(self):
         pass
 
     @staticmethod
     def set_game_id(game_id=""):
         if game_id:
             FileManger.__game_id = game_id
-        elif not FileManger.__game_id:
-            FileManger.__game_id = input("Enter game id: ")
         else:
             FileManger.__game_id = input("Enter game id:")
 
@@ -84,14 +106,6 @@ class GameDownloader(FileManger):
         super().__init__()
         self.is_token = is_token
         self.game_id = ""
-
-    def get_lichess_game(self):
-        if self.is_token:
-            # self.token = FileManager.get_token(token_path)
-            # self.get_game_via_api(self.token)
-            pass
-        else:
-            self.set_game_id()
     
     def get_game_via_api(self):
         pass
@@ -107,8 +121,9 @@ class GameDownloader(FileManger):
             if r.status_code == 200:
                 self.save_url_game_content(r, self.game_id)
             else:
-                print("Invalid game id from Lichess....", file=sys.stderr)
-                return False
+                print("Invalid game id response from Lichess....", file=sys.stderr)
+                logger.error("Invalid game id response from Lichess....")
+                sys.exit(1)
             return True
         else:
             self.set_game_id()
@@ -120,4 +135,6 @@ class GameDownloader(FileManger):
             self.get_game_via_gameid(self.game_id)
         else:
             print("Enter valid game id from Lichess....", file=sys.stderr)
+            logger.error("Entered empty string...")
+            sys.exit(1)
         
