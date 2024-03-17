@@ -7,7 +7,7 @@ class Constant:
     ENGINE_PATH = "stockfish_engine\stockfish-windows-x86-64-avx2.exe"
 
     # Game Analysis Scan depth
-    SCAN_ENGINE_DEPTH = 15
+    SCAN_ENGINE_DEPTH = 20
 
     # Puzzle Creation Depth
     PUZZLE_ENGINE_DEPTH = 25
