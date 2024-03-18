@@ -14,10 +14,10 @@ class TrackEval:
     def __post_init__(self):
         self.set_mate()
         self.set_cp()
-        # self.win_chances()
         self.wdl = self.povscore.pov(self.turn).wdl().expectation()
-        self.mateCreated = True if self.mate > 0 else False
-        self.inCheckMate = True if self.mate < 0 else False
+        # self.wdl = self.wdl_score()
+        self.mateCreated = self.mate > 0
+        self.inCheckMate = self.mate < 0
         self.noMateFound = not self.mate
         
     def set_mate(self):
@@ -50,7 +50,7 @@ class TrackEval:
     
     def wdl_score(self):
         win_chances = self.win_chances()
-        return 50 + 50 * win_chances
+        return (50 + 50 * win_chances) * 0.01
 
 @dataclass
 class BestMovePair:
@@ -63,6 +63,22 @@ class Continuation:
     bestmove: Move
     solution: List[Move]
     turn: int
+
+@dataclass
+class BoardInfo:
+    node: ChildNode
+
+    def __post_init__(self):
+        self.board = self.node.board()
+        self.side = "White" if not self.board.turn else "Black"
+        self.turn = not self.board.turn
+        self.fen = self.board.fen()
+        self.move = self.node.move
+        self.half_move_number = self.node.ply()
+    
+    def get_info(self):
+        board_info_list = [self.half_move_number, self.move, self.side, self.fen]
+        return board_info_list
 
 # class TrackPrevScore(TrackEval):
 #     white_prev_score: ClassVar[PovScore] = PovScore(Cp(20), chess.WHITE)
@@ -79,15 +95,3 @@ class Continuation:
 #         else:
 #             TrackPrevScore.white_prev_score = score
 #             return TrackPrevScore.black_prev_score
-
-
-@dataclass
-class BoardInfo:
-    node: ChildNode
-
-    def __post_init__(self):
-        self.board = self.node.board()
-        self.side = "White" if not self.board else "Black"
-        self.fen = self.board.fen()
-        self.move = self.node.move
-        self.half_move_number = self.node.ply()
