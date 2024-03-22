@@ -8,6 +8,7 @@ import requests
 import logging
 # from chesspuzzler.constants import Constant
 import chess.pgn
+import pandas as pd
 
 # Create logging folder if it does not exist
 os.makedirs("./data/logging", exist_ok=True)
@@ -25,7 +26,7 @@ class FileManager:
     def save_url_game_content(file_object, game_id):
         parent_dir = os.path.join(".", "data")
         child_dir = os.path.join(parent_dir, "game_data")
-        os.makedirs(parent_dir, exist_ok=True)
+        os.makedirs(child_dir, exist_ok=True)
 
         file_name = f'lichess_{game_id}.pgn'
         file_path = os.path.join(child_dir, file_name)
@@ -37,6 +38,7 @@ class FileManager:
                     logger.debug(f"Added pgn content from Lichess from game id {game_id} to file...")
                 except:
                     logger.exception(f"Could not add content to {file_path}...")
+                    sys.exit(1)
 
         except FileNotFoundError:
             print(f"{file_path} not found...")
@@ -44,17 +46,7 @@ class FileManager:
             logger.exception(f"{file_path} not found...")
             sys.exit(1)
 
-        # check if the pgn file contains useful information about games
-        with open(file_path) as file:
-            game = chess.pgn.read_game(file)
-            logger.debug("Checking if file is empty or not...")
-            if game is None:
-                logger.debug(f"File {file_name} is empty, delecting file...")
-                os.remove(file_path)
-                logger.debug(f"{file_name} delected...")
-                sys.exit(1)
-            else:
-                logger.debug(f"File: {file_name} has been stored in {child_dir}")
+        logger.debug(f"File: {file_name} has been stored in {child_dir}")
 
 
     def load_pgn_game(self, game_id):
@@ -85,6 +77,33 @@ class FileManager:
             return True
         return False
     
+    def save_dataframe(self, data: pd.DataFrame, game_url: str) -> None:
+        parent_dir = os.path.join(".", "data")
+        child_dir = os.path.join(parent_dir, "chess_analysis_report")
+        os.makedirs(child_dir, exist_ok=True)
+
+        if isinstance(data, pd.DataFrame) or isinstance(data, pd.Series):
+            game_id = game_url.split("/")[-1]
+            file_name = f"lichess_{game_id}.csv"
+            file_path = os.path.join(child_dir, file_name)
+            try:
+                data.to_csv(file_path)
+                logger.debug(f"{file_name} save successfully to {file_path}...")
+            except:
+                logger.exception("Could not save Dataframe to CSV...")
+
+    def update_game(self, game: str, game_url: str) -> None:
+        game_id = game_url.split("/")[-1]
+        file_name = f"lichess_{game_id}.pgn"
+        file_path = os.path.join(".", "data", "game_data", file_name)
+        try:
+            with open(file_path, "w") as file:
+                export = chess.pgn.FileExporter(file)
+                game.accept(export)
+                logger.debug(f"{file_name} has successfully been re-written...")
+        except:
+            logger.exception("Could not re-write file...")
+
 
 class GameDownloader(FileManager):
     """Download lichess game
