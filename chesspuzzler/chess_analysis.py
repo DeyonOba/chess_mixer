@@ -3,6 +3,7 @@
 """Analyze Chess Games stored in pgn format."""
 
 import os
+import copy
 import sys
 import logging
 import pandas as pd
@@ -43,7 +44,11 @@ class EvaluationEngine:
        
     def position_eval(self) -> str:
         prev = TrackEval(self.prevScore, self.turn)
-        curr = TrackEval(self.info["score"], self.turn)
+
+        try:
+            curr = TrackEval(self.info["score"], self.turn)
+        except TypeError:
+            curr = TrackEval(self.info, self.turn)
 
         logger.info("--"*20)
         logger.info("SCORE DETAILS: ")
@@ -59,7 +64,7 @@ class EvaluationEngine:
         mate_limit = Mate(15)
         advantage = curr.wdl > 0.5
         lostAdvantage = not advantage
-        mateCreated = prev.mateCreated or curr.mateCreated
+        mateSequence = prev.mateCreated or curr.mateCreated
         
         if self.node.board().is_checkmate():
             comment = "Game Ended with Checkmate..."
@@ -68,7 +73,7 @@ class EvaluationEngine:
             logger.info(f"Comment: {self.comment}\nJudgement:{self.evaluation}")
             return "Best Move"
         
-        if mateCreated:
+        if mateSequence:
             logger.debug("Checking Mating conditions")
 
             if prev.mateCreated and curr.inCheckMate:
@@ -77,17 +82,23 @@ class EvaluationEngine:
                 logger.info(f"Comment: {self.comment}\nJudgement:{self.evaluation}")
                 return "Blunder"
             
-            # Cp(0) < Cp(20) < Cp(400) < Mate(17) < Mate(3) < MateGiven
-            elif prev.mateCreated and curr.noMateFound and Mate(prev.mate) > mate_limit and advantage:
-                self.comment = "Missed mating chance created but you still have the advantage."
-                logger.info(f"Comment: {self.comment}")
+            # # Cp(0) < Cp(20) < Cp(400) < Mate(17) < Mate(3) < MateGiven
+            # elif prev.mateCreated and curr.noMateFound and Mate(prev.mate) >= mate_limit and advantage:
+            #     self.comment = "Missed mating chance created but you still have the advantage."
+            #     logger.info(f"Comment: {self.comment}")
 
-                if curr.wdl < prev.wdl:
-                    logger.debug("Previous winning chance is greater the your current winning chance.")
-                    return self.evaluate(curr.wdl, prev.wdl)
-                else:
-                    logger.debug("Still winning but let's find the best move")
-                    return self.further_analysis()
+            #     if curr.wdl < prev.wdl:
+            #         logger.debug("Previous winning chance is greater the your current winning chance.")
+            #         return self.evaluate(curr.wdl, prev.wdl)
+            #     else:
+            #         logger.debug("Still winning but let's find the best move")
+            #         return self.further_analysis()
+            
+            elif prev.mateCreated and curr.noMateFound:
+                if curr.cp > 999: return "Inaccuracy"
+                elif curr.cp > 700: return "Mistake"
+                else: return "Blunder" 
+        
             
             elif prev.mateCreated and curr.noMateFound and advantage:
                 self.comment = "Lost mate but still has the advantage"
@@ -108,19 +119,30 @@ class EvaluationEngine:
                 logger.info(f"Comment: {self.comment}")
                 return self.further_analysis()
             
-            elif curr.mate >= prev.mate and prev.mateCreated and Mate(prev.mate) > mate_limit:
+            # elif curr.mate >= prev.mate and prev.mateCreated and Mate(prev.mate) > mate_limit:
+            #     self.comment = f"Fewer mating moves in {prev.mate} but now {curr.mate}"
+            #     logger.info(f"{self.comment}")
+            #     return self.further_analysis()
+
+            elif curr.mate >= prev.mate and prev.mateCreated:
                 self.comment = f"Fewer mating moves in {prev.mate} but now {curr.mate}"
                 logger.info(f"{self.comment}")
                 return self.further_analysis()
             
-            elif curr.mate < prev.mate:
+            elif curr.mate < prev.mate and curr.mateCreated and prev.mateCreated:
                 self.comment = "Making precise mating moves."
                 logger.info(f"Comment: {self.comment}")
                 return self.further_analysis()
+            
             else:
                 self.comment = "Check for candidate moves and best move"
                 logger.debug(f"{self.comment}")
                 self.further_analysis()
+
+        elif prev.noMateFound and curr.inCheckMate:
+            if prev.cp < -999: return "Inaccuracy"
+            elif prev.cp < -700: return "Mistake"
+            else: return "Blunder"
 
         elif curr.wdl < prev.wdl:
             self.comment = "Previous winning chance is greater than current winning chance"
@@ -180,10 +202,12 @@ def symbol_uci_move(node):
 class GameAnalysis(FileManager):
 
     def __init__(self, game) -> None:
+        super().__init__()
         self.game = game
         self.is_game_processed = False
 
     def game_analysis(self):
+        from chesspuzzler.logger import log_board
         board = chess.Board()
         engine = SimpleEngine.popen_uci(Constant.ENGINE_PATH)
         # The initial score at the begining of the game for WHITE is Cp 20
@@ -200,32 +224,41 @@ class GameAnalysis(FileManager):
             board.push(node.move)
             board_info = BoardInfo(node)
 
-            info = engine.analyse(board, chess.engine.Limit(depth=Constant.SCAN_ENGINE_DEPTH))
-            evaluate = EvaluationEngine(node, engine, info, prevScore, board_info.turn)
+            if node.eval():
+                info = node.eval()
+            else:
+                info = engine.analyse(board, chess.engine.Limit(depth=Constant.SCAN_ENGINE_DEPTH))
+                GameAnalysis.set_node_details(node, info["score"])
 
+            evaluate = EvaluationEngine(node, engine, info, prevScore, board_info.turn)
             evaluation = evaluate.position_eval()
             # After evaluating the board position update the `prevScore`
-            prevScore = info["score"]
+            try:
+                prevScore = info["score"]
+            except TypeError:
+                prevScore = info
             cp, wdl, mate = evaluate.current.cp, evaluate.current.wdl, evaluate.current.mate
             move_info = board_info.get_info() + [cp, wdl, mate, evaluation]
+            # print(log_board(board_info, node, prevScore.pov(board_info.turn).mate() if mate else cp, evaluation))
+            print(log_board(board_info, node, prevScore.pov(node.turn), evaluation))
             game_data.append(move_info)
 
-            GameAnalysis.set_node_details(node, prevScore)
-        self.game = node.game()
-        engine.quit() 
         df = pd.DataFrame(game_data, columns=column_labels)
-        print(df.head())    
+        self.update_game(node.game(), node.game().headers.get("Site"))
+        self.save_dataframe(df, node.game().headers.get("Site"))  
+        engine.quit()
+        self.is_game_processed = True 
         return node.game()
     
     @staticmethod
-    def set_node_details(node, prevScore):
+    def set_node_details(node, povscore):
         if node.eval() and node.eval_depth():
             if node.eval_depth() < Constant.SCAN_ENGINE_DEPTH:
-                node.set_eval(prevScore, Constant.SCAN_ENGINE_DEPTH)
+                node.set_eval(povscore, Constant.SCAN_ENGINE_DEPTH)
             if node.clock():
                 node.set_clock(node.clock())
         else:
-            node.set_eval(prevScore, Constant.SCAN_ENGINE_DEPTH)
+            node.set_eval(povscore, Constant.SCAN_ENGINE_DEPTH)
             if node.clock():
                 node.set_clock(node.clock())
         return node
