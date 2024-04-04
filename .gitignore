@@ -1,6 +1,8 @@
 # Hidden files
 .env
 .ipynb_checkpoints
+data/*
+chesspuzzly/__pychache__
 lichess_api_token.json
 test.py
 python*.dll
