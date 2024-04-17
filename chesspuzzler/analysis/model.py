@@ -14,7 +14,7 @@ class TrackEval:
     def __post_init__(self):
         self.set_mate()
         self.set_cp()
-        self.wdl = self.povscore.pov(self.turn).wdl().expectation()
+        self.wdl = self.povscore.pov(self.turn).wdl(model="sf12").expectation()
         # self.wdl = self.wdl_score()
         self.mateCreated = self.mate > 0
         self.inCheckMate = self.mate < 0
