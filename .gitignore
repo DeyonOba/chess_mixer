@@ -7,3 +7,8 @@ lichess_api_token.json
 test.py
 python*.dll
 stockfish*
+*.ipynb_checkpoints
+*.ipynb
+**/__pycache__/
+*.log
+*.pgn
