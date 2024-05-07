@@ -5,8 +5,6 @@ import chess.pgn
 import chess.engine
 import copy
 import sys
-# import util
-# import zstandard
 from chesspuzzler.generator.model import Puzzle, NextMovePair
 from io import StringIO
 from chess import Move, Color
@@ -14,10 +12,9 @@ from chess.engine import SimpleEngine, Mate, Cp, Score, PovScore
 from chess.pgn import Game, ChildNode
 from typing import List, Optional, Union, Set
 from chesspuzzler.generator.util import get_next_move_pair, material_count, material_diff, is_up_in_material, maximum_castling_rights, win_chances, count_mates
-# from server import Server
+from chesspuzzler.analysis.logger import configure_log
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(format='%(asctime)s %(levelname)-4s %(message)s', datefmt='%m/%d %H:%M')
+logger = configure_log(__name__, "puzzle_gen.log")
 
 pair_limit = chess.engine.Limit(depth = 50, time = 30, nodes = 25_000_000)
 mate_defense_limit = chess.engine.Limit(depth = 15, time = 10, nodes = 8_000_000)
@@ -62,12 +59,8 @@ class Generator:
 
     def get_next_pair(self, node: ChildNode, winner: Color) -> Optional[NextMovePair]:
         pair = get_next_move_pair(self.engine, node, winner, pair_limit)
-        if node.board().turn == winner and self.is_valid_attack(pair):
+        if node.board().turn == winner and not self.is_valid_attack(pair):
             logger.debug("No valid attack {}".format(pair))
-            print("No valid attack {}".format(pair))
-            print("Check pair second", pair.second)
-            print("Node board Turn", node.board().turn, "Is valid attack", self.is_valid_attack(pair))
-            print("Winner", winner)
             return None
         return pair
     
@@ -100,12 +93,13 @@ class Generator:
             next = self.get_next_move(node, mate_defense_limit)
             if not next:
                 return None
+            print("here is the next move:", next)
             move = next
 
         # Recursively make engine moves still the game is over or one of the other conditions is meet above 
         follow_up = self.cook_mate(node.add_main_variation(move), winner)
 
-        if not follow_up:
+        if not follow_up and type(follow_up) is not list:
             return None
         return [move] + follow_up
     
@@ -119,6 +113,8 @@ class Generator:
         seen_epds: Set[str] = set()
         board = game.board()
         skip_until_irreversible = False
+        puzzle_count = 0
+        puzzle_list = []
 
         for node in game.mainline():
             if skip_until_irreversible:
@@ -134,7 +130,15 @@ class Generator:
             if not current_eval:
                 logger.debug("Skipping game without eval on ply {}".format(node.ply()))
                 print("Skipping game without eval on ply {}".format(node.ply()))
-                return None
+
+                if puzzle_count:
+                    logger.debug("Found {} puzzles from {}".format(puzzle_count, game.headers.get("Site")))
+                    print("Found {} puzzles from {}".format(puzzle_count, game.headers.get("Site")))
+                else:
+                    logger.debug("Found nothing from {}".format(game.headers.get("Site")))
+                    print("Found nothing from {}".format(game.headers.get("Site")))
+
+                return puzzle_list
 
             board.push(node.move)
             epd = board.epd()
@@ -150,15 +154,22 @@ class Generator:
 
             if isinstance(result, Puzzle):
                 print("Found Puzzle...")
+                puzzle_count += 1
                 print(result)
-                return result
+                # return result
+                puzzle_list.append(result)
+                prev_score = -current_eval.pov(node.turn())
+                continue
 
             prev_score = -result
+        if puzzle_count:
+            logger.debug("Found {} puzzles from {}".format(puzzle_count, game.headers.get("Site")))
+            print("Found {} puzzles from {}".format(puzzle_count, game.headers.get("Site")))
+        else:
+            logger.debug("Found nothing from {}".format(game.headers.get("Site")))
+            print("Found nothing from {}".format(game.headers.get("Site")))
 
-        logger.debug("Found nothing from {}".format(game.headers.get("Site")))
-        print("Found nothing from {}".format(game.headers.get("Site")))
-
-        return None
+        return puzzle_list
     
     def cook_advantage(self, node: ChildNode, winner: Color) -> Optional[List[NextMovePair]]:
         print("COOK ADVANTAGE...")
@@ -211,14 +222,12 @@ class Generator:
         elif score > mate_soon:
             logger.debug("Mate {}#{} Probing...".format(game_url, node.ply()))
             print("Mate {}#{} Probing...".format(game_url, node.ply()))
-#             if self.server.is_seen_pos(node):
-#                 logger.debug("Skip duplicate position")
-#                 return score
             mate_solution = self.cook_mate(copy.deepcopy(node), winner)
-            if mate_solution is None or (tier == 1 and len(mate_solution) == 3):
+            # if mate_solution is None or (tier == 1 and len(mate_solution) == 3):
+            if mate_solution is None:
                 return score
             print("PUZZLE CREATED")
-            return Puzzle(node, mate_solution, 999999999)
+            return Puzzle(node, mate_solution, score.mate())
         elif score >= Cp(200) and win_chances(score) > win_chances(prev_score) + 0.6:
             if score < Cp(400) and material_diff(board, winner) > -1:
                 logger.debug("Not clearly winning and not from being down in material, aborting")
@@ -246,6 +255,8 @@ class Generator:
                 logger.debug("Discard two-mover")
                 print("Discard two-mover")
                 return score
+            cp = solution[len(solution) - 1].best.score.score()
+
             cp = solution[len(solution) - 1].best.score.score()
             return Puzzle(node, [p.best.move for p in solution], 999999998 if cp is None else cp)
         else:
