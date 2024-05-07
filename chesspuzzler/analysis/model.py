@@ -14,8 +14,8 @@ class TrackEval:
     def __post_init__(self):
         self.set_mate()
         self.set_cp()
-        self.wdl = self.povscore.pov(self.turn).wdl(model="sf12").expectation()
-        # self.wdl = self.wdl_score()
+        self.wdl = self.povscore.pov(self.turn).wdl(model="sf15").expectation()
+        # self.wdl= self.wdl_score()
         self.mateCreated = self.mate > 0
         self.inCheckMate = self.mate < 0
         self.noMateFound = not self.mate
@@ -79,19 +79,3 @@ class BoardInfo:
     def get_info(self):
         board_info_list = [self.half_move_number, self.move, self.side, self.fen]
         return board_info_list
-
-# class TrackPrevScore(TrackEval):
-#     white_prev_score: ClassVar[PovScore] = PovScore(Cp(20), chess.WHITE)
-#     black_prev_score: ClassVar[PovScore] = PovScore(Cp(-20), chess.BLACK)
-
-#     def __init__(self, score: PovScore, turn: int) -> None:
-#         self.score = self.set_prev_score(score)
-#         super().__init__(self.score, self.turn)
-
-#     def set_score(self, score):
-#         if self.turn:
-#             TrackPrevScore.white_prev_score = score
-#             return TrackPrevScore.white_prev_score
-#         else:
-#             TrackPrevScore.white_prev_score = score
-#             return TrackPrevScore.black_prev_score
