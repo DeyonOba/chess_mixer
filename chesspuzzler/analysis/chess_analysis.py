@@ -22,6 +22,7 @@ from chesspuzzler.analysis.logger import configure_log
 # Create logging folder if it does not exist
 os.makedirs("./data/logging", exist_ok=True)
 logger = configure_log(__name__, "analysis.log")
+board_logger = configure_log("board", "evaluation.log", view_on_console=True)
 
 
 class EvaluationEngine:
@@ -179,7 +180,6 @@ class GameAnalysis(FileManager):
 
     def game_analysis(self):
         from chesspuzzler.analysis.logger import log_board
-        # board_logger = configure_board_log(__name__, "next.log")
         board = chess.Board()
         engine = SimpleEngine.popen_uci(Constant.ENGINE_PATH)
         # The initial score at the begining of the game for WHITE is Cp 20
@@ -214,9 +214,7 @@ class GameAnalysis(FileManager):
                 prevScore = info
             cp, wdl, mate = evaluate.current.cp, evaluate.current.wdl, evaluate.current.mate
             move_info = board_info.get_info() + [cp, wdl, mate, evaluation]
-            # board_logger.info(log_board(board_info, node, prevScore.pov(node.turn), evaluation))
-            # print(log_board(board_info, node, prevScore.pov(node.turn), evaluation))
-            logger.info(log_board(board_info, node, prevScore.pov(node.turn), evaluation))
+            board_logger.info(log_board(board_info, node, prevScore.pov(node.turn), evaluation))
             logger.debug("--"*20)
             game_data.append(move_info)
 
@@ -229,7 +227,10 @@ class GameAnalysis(FileManager):
         return node.game()
     
     @staticmethod
-    def set_node_details(node, povscore):
+    def set_node_details(node: ChildNode, povscore: PovScore) -> ChildNode:
+        """
+        Sets node comment with evaluation and engine depth.
+        """
         if node.eval() and node.eval_depth():
             if node.eval_depth() < Constant.SCAN_ENGINE_DEPTH:
                 node.set_eval(povscore, Constant.SCAN_ENGINE_DEPTH)
