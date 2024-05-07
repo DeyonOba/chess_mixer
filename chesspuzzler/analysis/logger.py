@@ -7,7 +7,7 @@ from colorama import Fore, Style
 
 
 
-def configure_log(logger_name: str, filename: str, encoding='utf-8', view_on_console=True):
+def configure_log(logger_name: str, filename: str, encoding='utf-8', view_on_console=False):
     # create logger
     logger = logging.getLogger(logger_name)
     logger.setLevel(logging.DEBUG)
