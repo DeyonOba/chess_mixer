@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import math
 import chess
 import chess.engine
-from model import EngineMove, NextMovePair
+from chesspuzzler.generator.model import EngineMove, NextMovePair
 from chess import Color, Board
 from chess.pgn import GameNode
 from chess.engine import SimpleEngine, Score
