@@ -131,17 +131,16 @@ class EvaluationEngine:
             elif prev.cp < -700: return "Mistake"
             else: return "Blunder"
 
-        elif 0.3 > (1 - curr.wdl - prevoppScore.wdl) >= 0.1 and curr.wdl >= prevpovScore.wdl:
+        # elif 0.3 > (1 - curr.wdl - prevoppScore.wdl) >= 0.05 and curr.wdl >= prevpovScore.wdl:
+        elif (1 - curr.wdl - prevoppScore.wdl) >= 0:
             delta_wdl = 1 - curr.wdl - prevoppScore.wdl
-            if delta_wdl >= 0.2:
-                return "Mistake"
-            elif delta_wdl >= 0.1:
-                return "Inaccuracy"
+            return self.evaluate(delta_wdl)
 
-        elif curr.wdl < prev.wdl:
-            self.comment = "Previous winning chance is greater than current winning chance"
-            logger.info(f"Comment: {self.comment}")
-            return self.evaluate(curr.wdl, prevpovScore.wdl)
+        # elif curr.wdl < prev.wdl:
+        #     self.comment = "Previous winning chance is greater than current winning chance"
+        #     logger.info(f"Comment: {self.comment}")
+        #     delta_wdl = prevpovScore.wdl - curr.wdl
+        #     return self.evaluate(delta_wdl)
 
         else:
             self.comment = "Check for candidate moves and best move"
@@ -151,10 +150,9 @@ class EvaluationEngine:
     def further_analysis(self):
         return "Good Move"
     
-    def evaluate(self, curr_wdl, prev_wdl):
-        delta_wdl = prev_wdl - curr_wdl
+    def evaluate(self, delta_wdl):
         logger.debug("Delta win draw probability: {}".format(delta_wdl))
-        if delta_wdl >= 0.25:
+        if delta_wdl >= 0.2:
             self.comment = self.comment + "Blunder best move is  ."
             logger.info(f"{self.comment}")
             return "Blunder"
@@ -220,6 +218,7 @@ class GameAnalysis(FileManager):
 
 
         df = pd.DataFrame(game_data, columns=column_labels)
+        print(df.groupby(["side", "evaluation"])["move_number"].count())
         self.update_game(node.game(), node.game().headers.get("Site"))
         self.save_dataframe(df, node.game().headers.get("Site"))  
         engine.quit()
