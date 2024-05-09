@@ -93,7 +93,6 @@ class Generator:
             next = self.get_next_move(node, mate_defense_limit)
             if not next:
                 return None
-            print("here is the next move:", next)
             move = next
 
         # Recursively make engine moves still the game is over or one of the other conditions is meet above 
