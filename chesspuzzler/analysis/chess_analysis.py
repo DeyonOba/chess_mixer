@@ -154,15 +154,15 @@ class EvaluationEngine:
     def evaluate(self, curr_wdl, prev_wdl):
         delta_wdl = prev_wdl - curr_wdl
         logger.debug("Delta win draw probability: {}".format(delta_wdl))
-        if delta_wdl >= 0.3:
+        if delta_wdl >= 0.25:
             self.comment = self.comment + "Blunder best move is  ."
             logger.info(f"{self.comment}")
             return "Blunder"
-        elif delta_wdl >= 0.2:
+        elif delta_wdl >= 0.1:
             self.comment = self.comment + "Mistake best move is  ."
             logger.info(f"{self.comment}")
             return "Mistake"
-        elif delta_wdl >= 0.5:
+        elif delta_wdl >= 0.05:
             self.comment = self.comment + "Made an inaccuracy you can consider moves like  ."
             logger.info(f"{self.comment}")
             return "Inaccuracy"
