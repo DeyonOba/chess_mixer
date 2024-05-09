@@ -14,8 +14,8 @@ class TrackEval:
     def __post_init__(self):
         self.set_mate()
         self.set_cp()
-        self.wdl = self.povscore.pov(self.turn).wdl(model="sf15").expectation()
-        # self.wdl= self.wdl_score()
+        # self.wdl = self.povscore.pov(self.turn).wdl(model="sf15").expectation()
+        self.wdl= self.wdl_score()
         self.mateCreated = self.mate > 0
         self.inCheckMate = self.mate < 0
         self.noMateFound = not self.mate
@@ -75,6 +75,7 @@ class BoardInfo:
         self.fen = self.board.fen()
         self.move = self.node.move
         self.half_move_number = self.node.ply()
+        self.fullmove_number = self.board.fullmove_number if self.turn else self.board.fullmove_number - 1
     
     def get_info(self):
         board_info_list = [self.half_move_number, self.move, self.side, self.fen]
