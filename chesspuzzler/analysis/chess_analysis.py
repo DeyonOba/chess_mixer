@@ -16,7 +16,7 @@ from chess.engine import Cp, Mate, PovScore, InfoDict, SimpleEngine
 from chesspuzzler.analysis.constants import Constant
 from chesspuzzler.analysis.board_util import symbol_uci_move
 from colorama import Fore, Back, Style
-from chesspuzzler.analysis.model import TrackEval, BestMovePair, BoardInfo
+from chesspuzzler.analysis.model import TrackEval, BoardInfo
 from chesspuzzler.analysis.logger import configure_log
 
 # Create logging folder if it does not exist
@@ -136,11 +136,11 @@ class EvaluationEngine:
             delta_wdl = 1 - curr.wdl - prevoppScore.wdl
             return self.evaluate(delta_wdl)
 
-        # elif curr.wdl < prev.wdl:
-        #     self.comment = "Previous winning chance is greater than current winning chance"
-        #     logger.info(f"Comment: {self.comment}")
-        #     delta_wdl = prevpovScore.wdl - curr.wdl
-        #     return self.evaluate(delta_wdl)
+        elif curr.wdl < prev.wdl:
+            self.comment = "Previous winning chance is greater than current winning chance"
+            logger.info(f"Comment: {self.comment}")
+            delta_wdl = prevpovScore.wdl - curr.wdl
+            return self.evaluate(delta_wdl)
 
         else:
             self.comment = "Check for candidate moves and best move"
