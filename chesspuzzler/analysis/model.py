@@ -1,10 +1,10 @@
 import math
 # import chess
-from chess import Move
+from chess import Move, Color
 from dataclasses import dataclass, field
 from chess.engine import PovScore, Cp
 from chess.pgn import ChildNode
-from typing import List, ClassVar
+from typing import List, ClassVar, Optional
 
 @dataclass
 class TrackEval:
@@ -53,16 +53,18 @@ class TrackEval:
         return (50 + 50 * win_chances) * 0.01
 
 @dataclass
-class BestMovePair:
-    best: PovScore
-    second: PovScore
-    turn: int
+class EngineMove:
+    turn: Color
+    move: Move
+    score: PovScore
 
 @dataclass
-class Continuation:
-    bestmove: Move
-    solution: List[Move]
-    turn: int
+class CandidateMoves:
+    node: ChildNode
+    turn: Color
+    best: EngineMove
+    second: Optional[EngineMove]
+    third: Optional[EngineMove]
 
 @dataclass
 class BoardInfo:
