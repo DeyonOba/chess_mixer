@@ -136,19 +136,13 @@ class EvaluationEngine:
             delta_wdl = 1 - curr.wdl - prevoppScore.wdl
             return self.evaluate(delta_wdl)
 
-        elif curr.wdl < prev.wdl:
-            self.comment = "Previous winning chance is greater than current winning chance"
-            logger.info(f"Comment: {self.comment}")
-            delta_wdl = prevpovScore.wdl - curr.wdl
-            return self.evaluate(delta_wdl)
-
         else:
             self.comment = "Check for candidate moves and best move"
             logger.debug(f"{self.comment}")
             return self.further_analysis()
         
     def further_analysis(self):
-        return "Good Move"
+        return "Best move candidate"
     
     def evaluate(self, delta_wdl):
         logger.debug("Delta win draw probability: {}".format(delta_wdl))
@@ -164,8 +158,9 @@ class EvaluationEngine:
             self.comment = self.comment + "Made an inaccuracy you can consider moves like  ."
             logger.info(f"{self.comment}")
             return "Inaccuracy"
+        elif delta_wdl >= 0.02:
+            return "Good Move"
         else:
-            self.comment = self.comment + "Check for best moves"
             return self.further_analysis()
 
 
