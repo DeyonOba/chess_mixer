@@ -6,15 +6,22 @@ import os
 import copy
 import sys
 import logging
+from enum import Enum
+from typing import Optional
 import pandas as pd
 from chesspuzzler.analysis.file_util import FileManager
 import chess
+from chess import Board, Square, Move
 import chess.pgn
 from chess.pgn import ChildNode
 import chess.engine
 from chess.engine import Cp, Mate, PovScore, InfoDict, SimpleEngine
 from chesspuzzler.analysis.constants import Constant
-from chesspuzzler.analysis.board_util import symbol_uci_move
+from chesspuzzler.analysis.board_util import (
+    win_chances, wdl_score, up_in_material, symbol_uci_move,
+    material_count, material_diff, is_piece_hanging, slient_move
+)
+from chesspuzzler.analysis.model import CandidateMoves, EngineMove, TrackEval
 from colorama import Fore, Back, Style
 from chesspuzzler.analysis.model import TrackEval, BoardInfo
 from chesspuzzler.analysis.logger import configure_log
@@ -24,150 +31,204 @@ os.makedirs("./data/logging", exist_ok=True)
 logger = configure_log(__name__, "analysis.log")
 board_logger = configure_log("board", "evaluation.log", view_on_console=True)
 
+class Judgement(Enum):
+    """List of chess move classification."""
+    BLUNDER = "Blunder"
+    MISTAKE = "Mistake"
+    INACCURACY = "Inaccuracy"
+    GOOD = "Good"
+    EXCELLENT = "Excellent"
+    BEST = "Best"
+    DECISIVE = "Decisive"
+    BRILLANT = "Brillant"
+    FORCED = "Forced"
+    
 
 class EvaluationEngine:
+    CandidateInfo: Optional[CandidateMoves] = None
     def __init__(
-        self, node: ChildNode, engine: SimpleEngine,
-        info: InfoDict, prevScore: PovScore, 
-        prevpovScore: PovScore, turn: int 
+        self,
+        engine: SimpleEngine,
+        board: Board,
+        move: Move,
+        info: InfoDict,
+        prevInfo: InfoDict,
+        turn: int
     ) -> None:
-        self.node = node
         self.engine = engine
+        self.board = board.copy()
+        self.move = move
         self.info = info
-        self.prevScore = prevScore
-        self.prevpovScore = prevpovScore
+        self.prevInfo = prevInfo
         self.turn = turn
-        self.comment = " "
-        self.best_moves = []
-       
-    def position_eval(self) -> str:
-        prev = TrackEval(self.prevScore, self.turn)
-        prevoppScore = TrackEval(self.prevScore, not self.turn)
-        prevpovScore = TrackEval(self.prevpovScore, self.turn)
+        self.comment = ""
+        self.best_move = prevInfo["pv"][0].uci()
+        self.initial_board = board.copy()
+        self.initial_board.pop()
 
-        try:
-            curr = TrackEval(self.info["score"], self.turn)
-        except TypeError:
-            curr = TrackEval(self.info, self.turn)
+       
+    def position_classification(self) -> str:
+        self.current = TrackEval(self.info["score"], self.turn)
+        self.previous = TrackEval(self.prevInfo["score"], self.turn)
+
+        self.advantage = self.current.wdl > 0.5
+        lostAdvantage = not self.advantage
+        mateSequence = self.previous.mateCreated or self.current.mateCreated
 
         logger.info("--"*20)
         logger.info("SCORE DETAILS: ")
         logger.info("TURN: {}".format("White" if self.turn else "Black"))
         logger.info("Full move number: {}\t Half move number: {}".format(self.node.board().fullmove_number,self.node.ply()))
         logger.info("INDEX\t\t\tCP\tWDL\tMATE\t")
-        logger.info("Previous POV score     {}\t{}\t{}".format(prevpovScore.cp, prevpovScore.wdl, prevpovScore.mate))
-        logger.info("Previous Move Scores   {}\t{}\t{}".format(prev.cp, prev.wdl, prev.mate))
-        logger.info("Current Move Scores    {}\t{}\t{}".format(curr.cp, curr.wdl, curr.mate))
-
+        logger.info("Previous Move Scores   {}\t{}\t{}".format(self.previous.cp, self.previous.wdl, self.previous.mate))
+        logger.info("Current Move Scores    {}\t{}\t{}".format(self.current.cp, self.current.wdl, self.current.mate))
         
-        self.current = curr
-        # We don't expect majority of players to find mate in 30
-        # as this would require a time format like classical for this to 
-        # be achieved, and yet it's still rare for top masters to spot this 
-        # over the board
-        mate_limit = Mate(15)
-        advantage = curr.wdl > 0.5
-        lostAdvantage = not advantage
-        mateSequence = prev.mateCreated or curr.mateCreated
+        if self.board.is_checkmate():
+            self.comment = "Game Ended with Checkmate..."
+            return Judgement.BEST.value
         
-        if self.node.board().is_checkmate():
-            comment = "Game Ended with Checkmate..."
-            self.comment = comment
-            self.evaluation = "Best Move"
-            logger.info(f"Comment: {self.comment}\nJudgement:{self.evaluation}")
-            return "Best Move"
+        if len(list(self.initial_board.legal_moves)) == 1:
+            self.comment = "Forced move"
+            return Judgement.FORCED.value
         
         if mateSequence:
             logger.debug("Checking Mating conditions")
 
-            if prev.mateCreated and curr.inCheckMate:
-                self.comment = "Lost mate and now in Mate..."
-                self.evaluation = "Blunder"
-                logger.info(f"Comment: {self.comment}\nJudgement:{self.evaluation}")
-                return "Blunder"        
+            if self.previous.mateCreated and self.current.inCheckMate:
+                self.comment = "Lost mate and now in Mate."
+                return Judgement.BLUNDER.value        
             
-            elif prev.mateCreated and curr.noMateFound:
-                if curr.cp > 999: return "Inaccuracy"
-                elif curr.cp > 700: return "Mistake"
-                else: return "Blunder" 
-        
-            
-            elif prev.mateCreated and curr.noMateFound and advantage:
-                self.comment = "Lost mate but still has the advantage"
-                logger.info(f"Comment: {self.comment}")
-                if curr.wdl < prev.wdl:
-                    return self.evaluate(curr.wdl, prev.wdl)
+            elif self.previous.mateCreated and self.current.noMateFound:
+                if self.current.cp > 999:
+                    self.comment += "Did you know your opponent could have been checkmate in {}.".format(self.current.mate + 1)
+                    return Judgement.INACCURACY.value
+                elif self.current.cp > 700:
+                    self.comment += "Did you know your opponent could have been checkmate in {}.".format(self.current.mate + 1)
+                    return Judgement.MISTAKE.value
+                else:
+                    self.comment += "What an opportunity missed, you could have checkmated you opponent in {}.".format(self.current.mate + 1)
+                    return Judgement.BLUNDER.value
+         
+            elif self.previous.mateCreated and self.current.noMateFound and self.advantage:
+                self.comment = "Lost mate but you still have the advantage"
+                if self.current.wdl < self.previous.wdl:
+                    return self.evaluate(self.current.wdl, self.previous.wdl)
                 else:
                     return self.further_analysis()
 
-            elif prev.mateCreated and curr.noMateFound and lostAdvantage:
-                self.comment = "Lost mate and also the advantage..."
-                self.evaluation = "Blunder"
-                logger.info(f"Comment: {self.comment}\nJudgement:{self.evaluation}")
-                return "Blunder"
+            elif self.previous.mateCreated and self.current.noMateFound and lostAdvantage:
+                self.comment = "Lost mate and also the advantage."
+                return Judgement.BLUNDER.value
             
-            elif curr.mateCreated and prev.noMateFound:
+            elif self.current.mateCreated and self.previous.noMateFound:
                 self.comment = "Mating sequence created"
-                logger.info(f"Comment: {self.comment}")
                 return self.further_analysis()
 
-            elif curr.mate >= prev.mate and prev.mateCreated:
-                self.comment = f"Fewer mating moves in {prev.mate} but now {curr.mate}"
-                logger.info(f"{self.comment}")
+            elif self.current.mate >= self.previous.mate and self.previous.mateCreated:
+                self.comment = f"Fewer mating moves in {self.previous.mate} but now {self.current.mate}"
                 return self.further_analysis()
             
-            elif curr.mate < prev.mate and curr.mateCreated and prev.mateCreated:
+            elif self.current.mate < self.previous.mate and self.current.mateCreated and self.previous.mateCreated:
                 self.comment = "Making precise mating moves."
-                logger.info(f"Comment: {self.comment}")
                 return self.further_analysis()
             
             else:
                 self.comment = "Check for candidate moves and best move"
-                logger.debug(f"{self.comment}")
                 self.further_analysis()
+                
+        elif self.previous.noMateFound and self.current.inCheckMate:
+            self.comment += "Checkmate cannot be avoided."
+            if self.previous.cp < -999:
+                return Judgement.INACCURACY.value
+            elif self.previous.cp < -700:
+                return Judgement.MISTAKE.value
+            else:
+                self.comment += " They might have still been a chance to continue the game, if you played {}.".format(self.best_move)
+                return Judgement.BLUNDER.value
 
-        elif prev.noMateFound and curr.inCheckMate:
-            if prev.cp < -999: return "Inaccuracy"
-            elif prev.cp < -700: return "Mistake"
-            else: return "Blunder"
-
-        # elif 0.3 > (1 - curr.wdl - prevoppScore.wdl) >= 0.05 and curr.wdl >= prevpovScore.wdl:
-        elif (1 - curr.wdl - prevoppScore.wdl) >= 0:
-            delta_wdl = 1 - curr.wdl - prevoppScore.wdl
-            return self.evaluate(delta_wdl)
-
-        elif curr.wdl < prev.wdl:
-            self.comment = "Previous winning chance is greater than current winning chance"
-            logger.info(f"Comment: {self.comment}")
-            delta_wdl = prevpovScore.wdl - curr.wdl
+        # # `evaluate` only considers moves that a Excellent down to blunder
+        elif (self.previous.wdl - self.current.wdl >= 0.02) and (self.move.uci() != self.best_move):
+            # At the beginning of a game WHITE has an advantage of 0.25 center pawn score,
+            # this CP score is equivalent to a Win Draw Loss probability of 0.009.
+            # In order to ensure that minute changes in Cp like this are not necessary
+            # classified as bad moves, but are not the best. 
+            delta_wdl = self.previous.wdl - self.current.wdl
             return self.evaluate(delta_wdl)
 
         else:
-            self.comment = "Check for candidate moves and best move"
-            logger.debug(f"{self.comment}")
             return self.further_analysis()
         
-    def further_analysis(self):
-        return "Good Move"
     
     def evaluate(self, delta_wdl):
-        logger.debug("Delta win draw probability: {}".format(delta_wdl))
         if delta_wdl >= 0.2:
-            self.comment = self.comment + "Blunder best move is  ."
-            logger.info(f"{self.comment}")
-            return "Blunder"
+            self.comment += "Blunder best move is  {}.".format(self.best_move)
+            return Judgement.BLUNDER.value
         elif delta_wdl >= 0.1:
-            self.comment = self.comment + "Mistake best move is  ."
-            logger.info(f"{self.comment}")
-            return "Mistake"
+            self.comment += "Mistake best move is  {}.".format(self.best_move)
+            return Judgement.MISTAKE.value
         elif delta_wdl >= 0.05:
-            self.comment = self.comment + "Made an inaccuracy you can consider moves like  ."
-            logger.info(f"{self.comment}")
-            return "Inaccuracy"
+            self.comment += "Made an inaccuracy you can consider moves like  {}.".format(self.best_move)
+            return Judgement.INACCURACY.value
         else:
-            self.comment = self.comment + "Check for best moves"
-            return self.further_analysis()
+            self.comment += "Nice move, but you can consider this move {} as the best.".format(self.best_move)
+            return Judgement.GOOD.value
+        
+        
+    def further_analysis(self):
+        self.comment += "You found the best move in the position."
 
+        if not EvaluationEngine.CandidateInfo:
+            # If `CandidateInfo` is not set (i.e None) and analyse position with higher engine depth
+            EvaluationEngine.CandidateInfo = self.engine.analyse(chess.Board(self.initial_board.fen()), limit=Limit(depth=27), multipv=2)
+
+        MultiInfo = EvaluationEngine.CandidateInfo
+        BestInfo, SecondInfo = MultiInfo[0], MultiInfo[1]
+
+        self.best_move = BestInfo['pv'][0].uci()
+
+        if self.move.uci() == self.best_move:
+            # Update the object attribute `current` to the position evaluation of `BestInfo`
+            self.current = EngineMove(BestInfo, self.turn).score
+
+        if self.move.uci() == SecondInfo["pv"][0].uci():
+            # Update the object attribute `current` to the position evaluation of `BestInfo`
+            self.current = EngineMove(SecondInfo, self.turn).score  
+    
+        if (self.previous.wdl < 0.49 and self.current.wdl < 0.49):
+            # Best move played does not give a winning advantage
+            if self.previous.wdl - self.current.wdl >= 0.009 and self.move.uci() != self.best_move:
+                return Judgement.EXCELLENT.value
+            return Judgement.BEST.value
+        
+        if up_in_material(self.initial_board, self.turn) and self.current.cp > 100:
+            # Player is up in material and has a better position
+            if self.previous.wdl - self.current.wdl >= 0.009 and self.move.uci() != self.best_move:
+                return Judgement.EXCELLENT.value
+            return Judgement.BEST.value
+
+        cdt_moves = CandidateMoves(
+            self.turn, 
+            EngineMove(BestInfo, self.turn), 
+            EngineMove(SecondInfo, self.turn)
+            )
+
+        if cdt_moves.second.score:
+            if ( win_chances(cdt_moves.best.score.cp) > win_chances(cdt_moves.second.score.cp) + 0.6):
+                # Check for Brillancy or Decisive Moves
+
+                # Compare the best move with the second best move
+                # Check if the best move is a valid attack (i.e is by far better than the second best move)
+                if (
+                    is_piece_hanging(self.board, self.move.to_square)
+                    or slient_move(self.board, self.initial_board, self.turn, self.move)
+                    or self.move.promotion != chess.QUEEN or self.move.promotion != chess.ROOK):
+                    return Judgement.BRILLANT.value
+                else:
+                    return Judgement.DECISIVE.value
+                
+        if self.previous.wdl - self.current.wdl >= 0.009 and self.move.uci() != self.best_move:
+            return Judgement.EXCELLENT.value
+        return Judgement.BEST.value
 
 class GameAnalysis(FileManager):
 
@@ -178,11 +239,12 @@ class GameAnalysis(FileManager):
 
     def game_analysis(self):
         from chesspuzzler.analysis.logger import log_board
+        
         board = chess.Board()
+        print("Load Engine")
         engine = SimpleEngine.popen_uci(Constant.ENGINE_PATH)
-        # The initial score at the begining of the game for WHITE is Cp 20
-        prevScore = PovScore(Cp(20), board.turn)
-        prevpovScore = prevScore
+        prevInfo = engine.analyse(board, chess.engine.Limit(depth=20), info= chess.engine.Info.ALL)
+        print("Engine Successfully loaded")
 
         game_data = []
         column_labels = ["move_number", "move", "side", "fen", "cp", "wdl", "mate", "evaluation"]
@@ -193,33 +255,27 @@ class GameAnalysis(FileManager):
                 print("Move {} is illegal".format(symbol_uci_move(node)))
                 print(" ".join(map(lambda x: x.uci(), board.generate_pseudo_legal_moves())))
                 break
+            
             board.push(node.move)
             board_info = BoardInfo(node)
-            if node.eval():
-                info = node.eval()
-            else:
-                info = engine.analyse(board, chess.engine.Limit(depth=Constant.SCAN_ENGINE_DEPTH))
-                GameAnalysis.set_node_details(node, info["score"])
+            currInfo = engine.analyse(board, chess.engine.Limit(depth=20), info= chess.engine.Info.ALL)
 
-            evaluate = EvaluationEngine(node, engine, info, prevScore, prevpovScore, board_info.turn)
-            evaluation = evaluate.position_eval()
+            evaluate = EvaluationEngine(engine, board, node.move, currInfo, prevInfo, not board.turn)
+            position_classification = evaluate.position_classification()
     
             # After evaluating the board position update the `prevScore`
-            prevpovScore = prevScore
-            try:
-                prevScore = info["score"]
-            except TypeError:
-                prevScore = info
+            prevInfo = currInfo
+
             cp, wdl, mate = evaluate.current.cp, evaluate.current.wdl, evaluate.current.mate
-            move_info = board_info.get_info() + [cp, wdl, mate, evaluation]
-            board_logger.info(log_board(board_info, node, prevScore.pov(node.turn), evaluation))
+            move_info = board_info.get_info() + [cp, wdl, mate, position_classification]
+            board_logger.info(log_board(board_info, node, currInfo["score"].pov(node.turn), position_classification))
             logger.debug("--"*20)
             game_data.append(move_info)
 
 
         df = pd.DataFrame(game_data, columns=column_labels)
         print(df.groupby(["side", "evaluation"])["move_number"].count())
-        self.update_game(node.game(), node.game().headers.get("Site"))
+        # self.update_game(node.game(), node.game().headers.get("Site"))
         self.save_dataframe(df, node.game().headers.get("Site"))  
         engine.quit()
         self.is_game_processed = True 
