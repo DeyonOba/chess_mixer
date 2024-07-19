@@ -2,39 +2,41 @@ import math
 # import chess
 from chess import Move, Color
 from dataclasses import dataclass, field
-from chess.engine import PovScore, Cp
+from chess.engine import PovScore, Cp, InfoDict
 from chess.pgn import ChildNode
 from typing import List, ClassVar, Optional
+
 
 @dataclass
 class TrackEval:
     povscore: PovScore
     turn: int
-
+   
     def __post_init__(self):
+        self.score = self.povscore.pov(self.turn)
         self.set_mate()
         self.set_cp()
-        # self.wdl = self.povscore.pov(self.turn).wdl(model="sf15").expectation()
-        self.wdl= self.wdl_score()
+        self.wdl = self.wdl_score()
+        self.engine_wdl = self.povscore.pov(self.turn).wdl(model="sf15.1").expectation()
         self.mateCreated = self.mate > 0
         self.inCheckMate = self.mate < 0
         self.noMateFound = not self.mate
-        
+
     def set_mate(self):
         mate = self.povscore.pov(self.turn).mate()
         if mate:
             self.mate = mate
         else:
             self.mate = 0
-            
+
     def set_cp(self):
         cp = self.povscore.pov(self.turn)
-        
+
         if cp.mate():
-            self.cp = 10_000 if cp.mate() > 0 else -10_000
+            self.cp = 100_000 if cp.mate() > 0 else -100_000
         else:
             self.cp = cp.score()
-            
+
     def win_chances(self):
         """
         winning chances from -1 to 1
@@ -45,26 +47,34 @@ class TrackEval:
             return 1 if mate > 0 else -1
 
         cp = self.povscore.pov(self.turn).score()
-        MULTIPLIER = -0.003682081729595926 # https://github.com/lichess-org/lila/pull/11148
+        MULTIPLIER = (
+            -0.003682081729595926
+        )  # https://github.com/lichess-org/lila/pull/11148
         return 2 / (1 + math.exp(MULTIPLIER * cp)) - 1 if cp is not None else 0
-    
+
     def wdl_score(self):
         win_chances = self.win_chances()
         return (50 + 50 * win_chances) * 0.01
 
 @dataclass
 class EngineMove:
+    info: InfoDict
     turn: Color
-    move: Move
-    score: PovScore
+
+    def __post_init__(self):
+        self.move = self.info["pv"][0]
+        self.continuation = self.info["pv"]
+        # self.score = self.info["score"]
+        self.score = TrackEval(self.info["score"], self.turn)
+
 
 @dataclass
 class CandidateMoves:
-    node: ChildNode
+    # node: ChildNode
     turn: Color
     best: EngineMove
     second: Optional[EngineMove]
-    third: Optional[EngineMove]
+
 
 @dataclass
 class BoardInfo:
