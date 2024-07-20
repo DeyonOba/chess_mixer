@@ -15,7 +15,7 @@ from chess import Board, Square, Move
 import chess.pgn
 from chess.pgn import ChildNode
 import chess.engine
-from chess.engine import Cp, Mate, PovScore, InfoDict, SimpleEngine
+from chess.engine import Cp, Mate, PovScore, InfoDict, SimpleEngine, Limit
 from chesspuzzler.analysis.constants import Constant
 from chesspuzzler.analysis.board_util import (
     win_chances, wdl_score, up_in_material, symbol_uci_move,
@@ -78,7 +78,7 @@ class EvaluationEngine:
         logger.info("--"*20)
         logger.info("SCORE DETAILS: ")
         logger.info("TURN: {}".format("White" if self.turn else "Black"))
-        logger.info("Full move number: {}\t Half move number: {}".format(self.node.board().fullmove_number,self.node.ply()))
+        logger.info("Full move number: {}\t Half move number: {}".format(self.board.fullmove_number,self.board.ply()))
         logger.info("INDEX\t\t\tCP\tWDL\tMATE\t")
         logger.info("Previous Move Scores   {}\t{}\t{}".format(self.previous.cp, self.previous.wdl, self.previous.mate))
         logger.info("Current Move Scores    {}\t{}\t{}".format(self.current.cp, self.current.wdl, self.current.mate))
